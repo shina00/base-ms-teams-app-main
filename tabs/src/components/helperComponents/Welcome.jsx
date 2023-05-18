@@ -1,6 +1,7 @@
 import { useContext,useState,useEffect } from "react";
 import { Image } from "@fluentui/react-northstar";
 import "./Welcome.css";
+import { Dropdown, Loader } from '@fluentui/react-northstar'
 import { app } from "@microsoft/teams-js";
 import { AzureFunctions } from "./AzureFunctions";
 import { useData } from "@microsoft/teamsfx-react";
@@ -9,7 +10,15 @@ import { faTimes } from '@fortawesome/free-solid-svg-icons';
 import { faFolderOpen } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import * as microsoftTeams from "@microsoft/teams-js";
+import SlidingPanel from 'react-sliding-side-panel';
+import { toasterErrorMessage } from "../utils/errorHandlingUtils";
+import { LineChart } from '@fluentui/react-charting';
+import {UserData} from '../Data';
 import { BrowserRouter as Router, Switch, Route, Link } from 'react-router-dom';
+import {
+  Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, BarElement, Title, Tooltip, Legend,} from 'chart.js';
+import { Bar, Line } from 'react-chartjs-2';
+//import faker from 'faker';
 
 import Group from "./Groups";
 require('../../../node_modules/bootstrap/dist/css/bootstrap.min.css');
@@ -18,7 +27,7 @@ require('../../../node_modules/bootstrap/dist/css/bootstrap.min.css');
 //import { GraphUserProfile, IGraphUserProfile } from "./IGraphUserProfile";
 
 export function Welcome(props) {
-  const { environment, triggerConsent, apiClient } = {
+  const { environment, triggerConsent, apiClient, loggedInUser } = {
     environment: window.location.hostname === "localhost" ? "local" : "azure",
     ...props,
   };
@@ -42,16 +51,160 @@ export function Welcome(props) {
     return context.app.host.name;
   })?.data;
 
+  //Analytics
+  ChartJS.register(
+    CategoryScale,
+    LinearScale,
+    BarElement,
+    PointElement,
+    LineElement,
+    Title,
+    Tooltip,
+    Legend
+  );
+  const options = {
+    scales: {
+      xAxes: [{
+        scaleLabel: {
+          display: true,
+          labelString: 'Month'
+        }
+      }],
+      yAxes: [{
+        scaleLabel: {
+          display: true,
+          labelString: 'Value'
+        }
+      }]
+    }
+  };
+  
+ 
+  
+ 
+
+    // Get analytics data for logged in user
+    useData(async () => {
+      console.log('...',loggedInUser.preferredUserName)
+      await getAnalyticsData(loggedInUser.preferredUserName);
+  });
+  const [dropdownData, setDropDownData] = useState();
+  const [apiData, setApiData] = useState(undefined);
+  const [isClicked, setIsClicked] = useState(false);
+  const { loader } = useData(async () => {
+    try {
+        const response = await apiClient.get("users");
+
+        let processedData = response.data.map((user) => {
+            return { header: user.userPrincipalName, content: user.displayName }
+        });
+        processedData = [{ header: "All", content: "All Users" }, ...processedData]
+        setDropDownData(processedData)
+    } catch (error) {
+        let errorMessage = error.response.data.error;
+        if (errorMessage.includes("invalid_grant")) {
+            triggerConsent(true);
+        } else {
+            toasterErrorMessage("An error occured!");
+        }
+    }
+});
+
+//handle analytics change for all user 
+const handleChange = async (event) => {
+  setIsClicked(true);
+  setApiData();
+  try {
+      const response = await apiClient.get(`analytics?userUpn=${event.value.header}`);
+      setIsClicked(false);
+      setApiData(response.data);
+      
+      // Implementation: step 2
+      setSharepointData(restructureData(response.data.sharepoint, ["Shared Internally File Count", "Shared Externally File Count", "Viewed Or Edited File Count", "Visited Page Count"]));
+  } catch (error) {
+      setIsClicked(false);
+      let errorMessage = error.response.data.error;
+      if (errorMessage.includes("invalid_grant")) {
+          triggerConsent(true);
+      } else {
+          toasterErrorMessage("Failed to retrieve your Microsoft 365 data");
+      }
+  }
+}
+
+
+   // analytics Implementation: step 1 (nothing)
+   function restructureData(data, columns) {
+    let testData = [];
+    let count = 1;
+    for (let column in data) {
+        if (columns.includes(column)) {
+            testData.push({ id: count, label: column, count: data[column] });
+            count++;
+        }
+    }
+    console.log("testdata...",testData)
+    return testData;
+}
+
+
+ // analytics Implementation: step 2 (nothing)
+ const [sharepointData, setSharepointData] = useState([]);
+const getAnalyticsData = async (user) => {
+  try {
+      const response = await apiClient.get(`sharepointanalytics?userUpn=${user}`);
+console.log('testresponse', response.data)
+     // setApiData(response.data);     
+      // Implementation: step 2
+      setSharepointData(restructureData(response.data, ["Shared Internally File Count", "Shared Externally File Count", "Viewed Or Edited File Count", "Visited Page Count"]));
+  } catch (error) {
+      let errorMessage = error.response.data.error;
+      if (errorMessage.includes("invalid_grant")) {
+          triggerConsent(true);
+      } else {
+          toasterErrorMessage("An error occured!");
+      }
+  }
+}
+//step 3
+function restructureDataForChart(userData, chartLabel) {
+  const xLabels = ['Jan', 'Feb', 'Mar', 'Apr'];
+  return {
+    labels: userData.map((data) => data.label),
+    datasets: [
+      {
+        labels: xLabels,
+        label: chartLabel,
+        data: userData.map((data) => data.count),
+        backgroundColor: [
+          "	rgba(0,112,192,1.000)",
+          "rgb(54, 162, 235)",
+          "rgb(255, 159, 64)",
+          "rgb(172, 215, 250)",
+          "#FF0000",
+        ],
+        borderColor: "black",
+        borderWidth: 2,
+      }
+    ]
+  }
+}
+
+ // Implementation: step 4
+ const sharepointChartData = restructureDataForChart(sharepointData, "Sharepoint");
+
 //create sharepoint site
   const [postApiData, setPostApiData] = useState([]);
   const [description, setDescription] = useState('');
 const [displayName, setDisplayName] = useState('');
+const [security, setSecurity] = useState('');
 
   const HandleCreate = async (e) => {
     e.preventDefault();
      let body = {
       description: description,
       displayName: displayName,
+      security: security
     }
     let response = await apiClient.post("postGroup", body);
     setPostApiData(response.data.value);
@@ -67,6 +220,11 @@ const [displayName, setDisplayName] = useState('');
    const [teamDescription, setTeamDescription] = useState('');
    const [teamDisplayName, setTeamDisplayName] = useState('');
    const HandleCreateTeams = async (e) => {
+    setShowFirstPane(false)
+    setShowSecondPane(false)
+    setShowThirdPane(false)
+    setshowLastPane(false)
+    setshowTeamsPane(false)
     e.preventDefault();
      let body = {
       description: teamDescription,
@@ -74,6 +232,7 @@ const [displayName, setDisplayName] = useState('');
     }
     let response = await apiClient.post("postTeams", body);
     setPostTeamApiData(response.data.value);
+   
     console.log('postteamtesting' , response.data)
    };
 //   useData(async () => {
@@ -92,12 +251,12 @@ const [displayName, setDisplayName] = useState('');
    const [welcomeApiData, setWelcomeApiData] = useState(); 
 
 //get sitedata with rest
-const [restsiteApiData, setrestSiteApiData] = useState([]);
-      useData(async () => {
-        let response = await apiClient.get("restSite");
-        setrestSiteApiData(response.data.value);
-        console.log('restsitetesting' , response.data)
-   });
+//  const [restsiteApiData, setrestSiteApiData] = useState([]);
+//       useData(async () => {
+//          let response = await apiClient.get("restSite");
+//          setrestSiteApiData(response.data.value);
+//          console.log('restsitetesting' , response.data)
+//     });
    
 // get sharepoint site data
 const [siteApiData, setSiteApiData] = useState([]);
@@ -107,8 +266,41 @@ const [siteApiData, setSiteApiData] = useState([]);
         console.log('sitetesting' , response.data)
    });
 
+   // get sharepoint restsite data
+const [restsiteApiData, setRestSiteApiData] = useState([]);
+useData(async () => {
+  let response = await apiClient.get("sharepointrest");
+  setRestSiteApiData(response.data.value);
+  console.log('sitetesting' , response.data)
+});
+
+   const [siteanalyticsData, setanalyticsApiData] = useState([]);
+      useData(async () => {
+        let response = await apiClient.get("sharepointanalytics");
+        setanalyticsApiData(response.data);
+        console.log('siteanalytics' , response.data)
+   });
+
+   //get sharepoint user report
+   const [siteReportData, setReportApiData] = useState([]);
+      useData(async () => {
+        let response = await apiClient.get("reports");
+        setReportApiData(response.data.value);
+        console.log('sitereporttesting' , response.data);
+        console.log("details")
+   });
+
+   //get sharepoint pages report
+   const [allsiteData, setallSiteApiData] = useState([]);
+   useData(async () => {
+     let response = await apiClient.get("sharepoint");
+     setallSiteApiData(response.data.value);
+     console.log('allsitetesting' , response.data)
+});
+
    // get group site data
    const [internalApiData, setInternalApiData] = useState([]);
+   const [groupsecurityData, setgroupsecurityData] = useState([]);
     useData(async () => {
         let response = await apiClient.get("user");
         setInternalApiData(response.data.value);
@@ -122,6 +314,22 @@ const [siteApiData, setSiteApiData] = useState([]);
       setTeamsApiData(response.data.value);
       console.log('testingteams' , response.data)
   });
+
+  //get owners api data
+  const [ownersApiData, setownersApiData] = useState([]);
+  useData(async () => {
+    let response = await apiClient.get("owners");
+    setownersApiData(response.data.value);
+    console.log('testingowners' , response.data)
+});
+
+//get members api data
+const [membersApiData, setmembersApiData] = useState([]);
+useData(async () => {
+  let response = await apiClient.get("owners");
+  setmembersApiData(response.data.value);
+  console.log('testingmembers' , response.data)
+});
 
 
   //handle data change on click
@@ -165,18 +373,24 @@ const [siteApiData, setSiteApiData] = useState([]);
     const [showFirstPane, setShowFirstPane] = useState(false);
     const [showSecondPane,setShowSecondPane] = useState(false)
     const [showLastPane, setshowLastPane] = useState(false);
+    const [showAnalyticsPane, setshowAnalyticsPane] = useState(false);
+    const [showAllAnalyticsPane, setshowAllAnalyticsPane] = useState(false);
+    const [showTeamsPane, setshowTeamsPane] = useState(false);
   
     const closePage = () => {
       setShowFirstPane(false)
       setShowSecondPane(false)
       setShowThirdPane(false)
       setshowLastPane(false)
+      setshowTeamsPane(false)
+      setshowAnalyticsPane(false);
+      setshowAllAnalyticsPane(false);
     }
   
     const handleButtonClick = () => {
       setshowLastPane(!showLastPane);
     };
-    const handleNextButtonClick = () => {
+    const handleThirdClick = () => {
       setShowSecondPane(!showSecondPane)
       setShowThirdPane(!showThirdPane)
   };
@@ -196,14 +410,29 @@ const [siteApiData, setSiteApiData] = useState([]);
       setShowFirstPane(!showFirstPane);
     };
 
-  
+    const handleAnalyticsClick = () => {
+      setshowAnalyticsPane(!showAnalyticsPane);
+    };
+
+    const handleAllAnalyticsClick = () => {
+      setshowAnalyticsPane(!showAnalyticsPane);
+    };
+
+    const handleTeamsPaneClick = () => {
+      setshowTeamsPane(!showTeamsPane);
+      setShowFirstPane(false)
+    };
+   
+   
+   
+    
   
   return (
     <>
     {showFirstPane && (
        
         <>
-                  <div style={{ width: '500px', height: '1005px', backgroundColor: '#eeeeee', position: 'absolute', top: '0', right: '0',padding:'30px',boxShadow:'3px 5px 10px 10px #E5E4E2',borderLeft:'solid 1px #E5E4E2',zIndex:'10' }}>
+                  <div style={{ width: '500px',overflowY:"scroll", height: '100%', backgroundColor: '#eeeeee', position: 'fixed', top: '0', right: '0',padding:'30px',boxShadow:'3px 5px 10px 10px #E5E4E2',borderLeft:'solid 1px #E5E4E2',zIndex:'10' }}>
                         <h6><b>New Workspace Request</b></h6>
                         <FontAwesomeIcon icon={faTimes} className="fontawesome" onClick={closePage}/>
                         <div>
@@ -214,7 +443,7 @@ const [siteApiData, setSiteApiData] = useState([]);
                           <div className="workspace-grid">
 
                             <div className="workspace-card">
-                             <a href="">
+                             <a onClick={handleTeamsPaneClick}>
                                <div style={{display:"flex",alignItems:"center"}}>
                                 <img src={require('./Images/logos_microsoft-teams.png')} ></img>
                                   <h5 style={{marginLeft:"10px"}}><b>Microsoft Team</b></h5>
@@ -292,7 +521,7 @@ const [siteApiData, setSiteApiData] = useState([]);
 
 {
 showSecondPane && (
-  <div style={{ width: '500px', height: '1005px', backgroundColor: '#eeeeee', position: 'absolute', top: '0', right: '0',padding:'30px',boxShadow:'3px 5px 10px 10px #E5E4E2',borderLeft:'solid 1px #E5E4E2',zIndex:'10' }}>
+  <div style={{ width: '500px', height: '100%',overflowY:"Scroll", backgroundColor: '#eeeeee', position: 'fixed', top: '0', right: '0',padding:'30px',boxShadow:'3px 5px 10px 10px #E5E4E2',borderLeft:'solid 1px #E5E4E2',zIndex:'10' }}>
   <h6><b>New Workspace Request</b></h6>
   <FontAwesomeIcon icon={faTimes} className="fontawesome" onClick={closePage}/>
   <div>
@@ -302,7 +531,7 @@ showSecondPane && (
 
     <div className="workspace-grid">
 
-      <div className="workspace-card">
+      {/* <div className="workspace-card">
        <a href="">
          <div style={{display:"flex",alignItems:"center"}}>
           <img src={require('./Images/logos_microsoft-teams.png')} ></img>
@@ -312,7 +541,7 @@ showSecondPane && (
             <p style={{marginTop:"11px",fontSize:"13px"}}>Productively work with teams and colleagues using chats,channels and advanced apps and document management features</p>
         </div>
        </a>
-     </div>
+     </div> */}
 
       <div className="workspace-card">
       <div>
@@ -327,7 +556,7 @@ showSecondPane && (
      </div>
 
       <div className="workspace-card">
-      <a href="">
+      <a onClick={handleThirdClick}>
         <div style={{display:"flex",alignItems:"center"}}>
           <img style={{width:"33px"}} src={require('./Images/image_151-removebg-preview (1) 1.png')} ></img>
             <h5 style={{marginLeft:"10px"}}><b>Internal Secure Collaboration</b></h5>
@@ -354,7 +583,7 @@ showSecondPane && (
   </div>
   <div style={{display:"flex",justifyContent:"flex-end", marginTop:'15px',marginRight:"19px",position:"relative",left:"20px"}}>
            <button onClick={handleFirstButtonClick} className="btn btn-primary" style={{width:'80px',fontSize:'12px', marginRight:'10px', border:'solid 1px #444791' ,color:'#444791' ,backgroundColor:'#eeeeee'}}>Back</button>
-           <button onClick={handleNextButtonClick} className="btn btn-primary" style={{width:'80px',fontSize:'12px',marginRight:'10px',backgroundColor:'#444791'}}>Next</button>
+           <button onClick={handleThirdButtonClick} className="btn btn-primary" style={{width:'80px',fontSize:'12px',marginRight:'10px',backgroundColor:'#444791'}}>Next</button>
            <button onClick={closePage} className="btn btn-primary" style={{width:'80px',fontSize:'12px', border:'solid 1px #444791' ,color:'#444791' ,backgroundColor:'#eeeeee'}}>Close</button>
 
         </div>
@@ -363,7 +592,7 @@ showSecondPane && (
 }
 
    {showThirdPane && (
-      <div style={{ width: '400px', height: '1005px', backgroundColor: '#eeeeee', position: 'absolute', top: '0', right: '0',padding:'30px',boxShadow:'3px 5px 10px 10px #E5E4E2',borderLeft:'solid 1px #E5E4E2',zIndex:'10' }}>
+      <div style={{ width: '400px', height: '100%', backgroundColor: '#eeeeee',overflowY:"scroll", position: 'fixed', top: '0', right: '0',padding:'30px',boxShadow:'3px 5px 10px 10px #E5E4E2',borderLeft:'solid 1px #E5E4E2',zIndex:'10' }}>
         {/* Content of the right side pane */}
         <div>
           <p style={{fontSize:'10px',color:'grey',fontWeight:'600'}}>New workspace request</p>
@@ -400,7 +629,7 @@ showSecondPane && (
   </div>
     
        <div style={{display:"flex",justifyContent:"flex-end", marginTop:'10px',marginRight:"19px"}}>
-           <button onClick={handleNextButtonClick } className="btn btn-primary" style={{width:'80px',fontSize:'12px', marginRight:'10px', border:'solid 1px #444791' ,color:'#444791' ,backgroundColor:'#eeeeee'}}>Back</button>
+           <button onClick={handleThirdButtonClick } className="btn btn-primary" style={{width:'80px',fontSize:'12px', marginRight:'10px', border:'solid 1px #444791' ,color:'#444791' ,backgroundColor:'#eeeeee'}}>Back</button>
            <button onClick={handleThirdButtonClick && handleButtonClick} className="btn btn-primary" style={{width:'80px',fontSize:'12px',backgroundColor:'#444791'}}>Next</button>
         </div>
        
@@ -408,7 +637,7 @@ showSecondPane && (
     )}
 
   {showLastPane && (
-      <div style={{ width: '400px', height: '1005px', backgroundColor: '#eeeeee', position: 'absolute', top: '0', right: '0',padding:'30px',boxShadow:'3px 5px 10px 10px #E5E4E2',borderLeft:'solid 1px #E5E4E2',zIndex:'10' }}>
+      <div style={{ width: '400px', height: '100%', backgroundColor: '#eeeeee', position: 'fixed',overflowY:"scroll", top: '0', right: '0',padding:'30px',boxShadow:'3px 5px 10px 10px #E5E4E2',borderLeft:'solid 1px #E5E4E2',zIndex:'10' }}>
         {/* Content of the right side pane */}
         <div>
           <p style={{fontSize:'10px',color:'grey',fontWeight:'600'}}>New workspace request</p>
@@ -426,8 +655,11 @@ showSecondPane && (
   <input type="text" placeholder="Enter site name" className="formlabel" name="displayName" value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
   <label for="fname">Give the site a description *</label>
   <input type="text" placeholder="Enter a description" className="formlabel" name="description" value={description} onChange={(e) => setDescription(e.target.value)} />
-  <label for="fname">Site URL</label>
-  <input type="text"  placeholder="Enter site URL" className="formlabel"></input>
+  <label for="fname">Enable Security</label>
+  <input class="custom-select" id="inputGroupSelect01" value={security} onChange={(e) => setSecurity(e.target.value)} />
+    {/* <option selected value="1">true</option>
+    <option value="2">false</option> */}
+  
   <label for="fname">Requested site URL</label>
   <input type="text"  placeholder="Enter requested site URL"className="formlabel"></input>
   <label for="fname">Privacy*</label>
@@ -442,9 +674,240 @@ showSecondPane && (
   <input type="text"  placeholder="Modern Team Site"></input>
   <div style={{display:"flex",justifyContent:"flex-end", marginTop:'10px'}}>
   <button onClick={handleButtonClick} className="btn btn-primary" style={{width:'80px',fontSize:'12px', marginRight:'10px', border:'solid 1px #444791' ,color:'#444791' ,backgroundColor:'#eeeeee'}}>Back</button>
-  <button type='submit' onClick={HandleCreate || handleButtonClick} className="btn btn-primary" style={{width:'80px',fontSize:'12px',backgroundColor:'#444791'}}>Submit</button>
+  <button type='submit' onClick={HandleCreate} className="btn btn-primary" style={{width:'80px',fontSize:'12px',backgroundColor:'#444791'}}>Submit</button>
   </div>
         </form>
+
+      </div>
+    )}
+
+{showTeamsPane && (
+      <div style={{ width: '400px', height: '100%', backgroundColor: '#eeeeee', position: 'fixed', top: '0', right: '0',padding:'30px',boxShadow:'3px 5px 10px 10px #E5E4E2',borderLeft:'solid 1px #E5E4E2',zIndex:'10' }}>
+        {/* Content of the right side pane */}
+        <div>
+          <p style={{fontSize:'10px',color:'grey',fontWeight:'600'}}>New workspace request</p>
+          <FontAwesomeIcon icon={faTimes} className="fontawesome" onClick={closePage}/>
+
+        </div>
+        <div>
+          <h5>Create a Team on Teams, got it !</h5>
+          <p style={{fontSize:'10px',fontWeight:'600'}}>Lets collect some final details in order to fulfill your requests</p>
+        </div>
+    
+        <form>
+        <label for="fname"> Display Name</label>
+  <input type="text"  className="formlabel" placeholder="Display Name"value={teamDisplayName} onChange={(e) => setTeamDisplayName(e.target.value)}></input>
+  <label for="fname" >Give the Team a Description</label>
+  <textarea type="text" placeholder="Enter a description" rows="3" className="form-control" name="description"value={teamDescription} onChange={(e) => setTeamDescription(e.target.value)}/>
+
+  <div style={{display:"flex",justifyContent:"flex-end", marginTop:'10px'}}>
+  <button onClick={handleButtonClick} className="btn btn-primary" style={{width:'80px',fontSize:'12px', marginRight:'10px', border:'solid 1px #444791' ,color:'#444791' ,backgroundColor:'#eeeeee'}}>Back</button>
+  <button type='submit' onClick={HandleCreateTeams} className="btn btn-primary" style={{width:'80px',fontSize:'12px',backgroundColor:'#444791'}}>Submit</button>
+  </div>
+        </form>
+
+      </div>
+    )}
+
+
+{showAnalyticsPane && (
+      <div style={{ width: '400px', height: '100%', backgroundColor: '#eeeeee', position: 'fixed',overflowY:"scroll", top: '0', right: '0',padding:'30px',boxShadow:'3px 5px 10px 10px #E5E4E2',borderLeft:'solid 1px #E5E4E2',zIndex:'10' }}>
+        {/* Content of the right side pane */}
+        <div>
+         
+          <FontAwesomeIcon icon={faTimes} className="fontawesome" onClick={closePage}/>
+
+        </div>
+        <div>
+          <h5 style={{fontWeight:'800px', fontSize:"14px", color:"#444791"}}><b>Compliance 360 Projects Analytics</b></h5>
+        </div>
+        <div className="mt-4">
+        <form >
+        {/* <label for="fname">User</label>
+        <div class="input-group mb-3">
+  <select class="custom-select" id="inputGroupSelect01">
+    <option selected>Choose...</option>
+    <option value="1">One</option>
+    <option value="2">Two</option>
+    <option value="3">Three</option>
+  </select>
+</div>
+<div className="row">
+<div className="col-md-6">
+  
+  <label for="dateofbirth">From</label>
+<input type="date" name="dateofbirth" id="dateofbirth"></input>
+</div>
+<div className="col-md-6">
+ 
+  <label for="dateofbirth">To</label>
+<input type="date" name="dateofbirth" id="dateofbirth"></input>
+</div>
+</div> */}
+ 
+<div className="row mt-4" style={{display:"flex",justifyContent:"space-evenly"}}   >
+<div className="col-md-3 chartcard">
+  <div className="card-text">
+     <h3> {membersApiData.length}</h3> 
+    <p>Members</p>
+  </div>
+</div>
+<div className="col-md-3 chartcard">
+  
+   <div>
+  
+ <div className="card-text"  >  
+   <h3>0</h3>
+ <p>Shared</p>
+</div>
+
+    
+   </div>
+   
+ 
+</div>
+<div className=" col-md-3 chartcard">
+  <div className="card-text">
+    <h3>30</h3>
+    <p>Viewed</p>
+  </div>
+</div>
+<div className="col-md-3 chartcard">
+  <div className="card-text">
+    <h3>48</h3>
+    <p>Visited</p>
+  </div>
+</div>
+
+</div>
+
+<div className="mt-4">
+  <p style={{ fontSize:"12px", color:"#444791"}}><b>Compliance 360 Document Management</b></p>
+  <div>
+  <div><Bar options={options} data={sharepointChartData} /></div>
+  <div><Line data={sharepointChartData} /></div>
+  {/* <div><LineChart data={{
+    UserData
+  }}
+  
+  />
+</div> */}
+  </div>
+</div>
+  {/* <div style={{display:"flex",justifyContent:"flex-end", marginTop:'10px'}}>
+  <button onClick={handleButtonClick} className="btn btn-primary btn-block" style={{width:'100%',fontSize:'12px', marginRight:'10px', borderRadius:'50px' ,color:'#444791' ,backgroundColor:'white'}}>See User Details</button>
+ 
+  </div> */}
+        </form>
+        </div>
+        
+
+      </div>
+    )}
+
+{showAllAnalyticsPane && (
+      <div style={{ width: '400px', height: '100%', backgroundColor: '#eeeeee', position: 'fixed',overflowY:"scroll", top: '0', right: '0',padding:'30px',boxShadow:'3px 5px 10px 10px #E5E4E2',borderLeft:'solid 1px #E5E4E2',zIndex:'10' }}>
+        {/* Content of the right side pane */}
+        <div>
+         
+          <FontAwesomeIcon icon={faTimes} className="fontawesome" onClick={closePage}/>
+
+        </div>
+        <div>
+          <h5 style={{fontWeight:'800px', fontSize:"14px", color:"#444791"}}><b>Compliance 360 Projects Analytics</b></h5>
+        </div>
+        <div className="mt-4">
+        <form >
+        {/* <label for="fname">User</label>
+        <div class="input-group mb-3">
+  <select class="custom-select" id="inputGroupSelect01">
+    <option selected>Choose...</option>
+    <option value="1">One</option>
+    <option value="2">Two</option>
+    <option value="3">Three</option>
+  </select>
+</div>
+<div className="row">
+<div className="col-md-6">
+  
+  <label for="dateofbirth">From</label>
+<input type="date" name="dateofbirth" id="dateofbirth"></input>
+</div>
+<div className="col-md-6">
+ 
+  <label for="dateofbirth">To</label>
+<input type="date" name="dateofbirth" id="dateofbirth"></input>
+</div>
+</div> */}
+ 
+<div className="row mt-4" style={{display:"flex",justifyContent:"space-evenly"}}   >
+<div className="col-md-3 chartcard">
+  <div className="card-text">
+     <h3> {membersApiData.length}</h3> 
+    <p>Members</p>
+  </div>
+</div>
+<div className="col-md-3 chartcard">
+  
+   <div>
+  
+ <div className="card-text"  >  
+   <h3>0</h3>
+ <p>Shared</p>
+</div>
+
+    
+   </div>
+   
+ 
+</div>
+<div className=" col-md-3 chartcard">
+  <div className="card-text">
+    <h3>30</h3>
+    <p>Viewed</p>
+  </div>
+</div>
+<div className="col-md-3 chartcard">
+  <div className="card-text">
+    <h3>48</h3>
+    <p>Visited</p>
+  </div>
+</div>
+
+</div>
+
+<div className="mt-4">
+  <p style={{ fontSize:"12px", color:"#444791"}}><b>Compliance 360 Document Management</b></p>
+  <div>
+    <div>
+    {loader && <Loader />}
+                    {!loader && <Dropdown
+                        key={dropdownData.content}
+                        search
+                        items={dropdownData}
+                        placeholder="Start typing a name"
+
+                        noResultsMessage="We couldn't find any matches."
+                        onChange={async (_, event) => await handleChange(event)}
+                    />}
+    </div>
+  <div><Bar options={options} data={sharepointChartData} /></div>
+  <div><Line data={sharepointChartData} /></div>
+  {/* <div><LineChart data={{
+    UserData
+  }}
+  
+  />
+</div> */}
+  </div>
+</div>
+  {/* <div style={{display:"flex",justifyContent:"flex-end", marginTop:'10px'}}>
+  <button onClick={handleButtonClick} className="btn btn-primary btn-block" style={{width:'100%',fontSize:'12px', marginRight:'10px', borderRadius:'50px' ,color:'#444791' ,backgroundColor:'white'}}>See User Details</button>
+ 
+  </div> */}
+        </form>
+        </div>
+        
 
       </div>
     )}
@@ -453,7 +916,7 @@ showSecondPane && (
           <div className="col-md-6">
 
           </div>
-          <div className="col-md-6" style={{display:'flex',justifyContent:'space-between',alignItems:'center',paddingInline:'60px',height:'50px'}}>
+          <div className="col-md-6" style={{display:'flex',justifyContent:'space-between',alignItems:'center',paddingInline:'20px',height:'50px'}}>
               <p style={{marginTop:'13px',fontSize:'12px', fontWeight:'600'}}>Welcome {userName ? ", " + userName : ""}</p>
              
                 <img src={require('./Images/arrow-3.png')}></img>
@@ -467,7 +930,10 @@ showSecondPane && (
 
               </div>
               <button onClick={handleThirdButtonClick} className="btn" style={{width:'80px',fontSize:'12px',backgroundColor:'#444791', color:'white'}}>New</button>
+              <button onClick={handleAnalyticsClick} className="btn" style={{width:'80px',fontSize:'12px',backgroundColor:'#444791', color:'white'}}>Analytics</button>
+              {/* <button onClick={handleAllAnalyticsClick} className="btn" style={{width:'80px',fontSize:'12px',backgroundColor:'#444791', color:'white'}}>All Analytics</button> */}
           </div>
+          
     </div>
  
    
@@ -511,7 +977,7 @@ showSecondPane && (
 <div className="card5">
          <img src={require('./Images/user-add.png')} ></img>
  <div className="card-text">
-    <h3>26</h3>
+    <h3>{ownersApiData.length}</h3>
     <p>Owners</p>
   </div>  </div>
 <div className="card6">
@@ -540,27 +1006,16 @@ showSecondPane && (
 </div>
 </a>
 </div>
- <form >
-  <label>
-    Description:
-    <input type="text" name="description" value={teamDescription} onChange={(e) => setTeamDescription(e.target.value)} />
+ 
 
 
-  </label>
-  <label>
-    Display Name:
-    <input type="text" name="displayName" value={teamDisplayName} onChange={(e) => setTeamDisplayName(e.target.value)} />
-  </label>
-  <button type='submit' onClick={HandleCreateTeams} >Submit</button>
-
-</form> 
 {showDefault &&  (
 <div className="welcome page">
       <div className="">
         <div className="row">
            <div className="col-md-12">
            <div className="row sitecard" style={{marginInline:'7px'}}>
-          
+         
     {siteApiData?.map((site) => (   
           <div className=" col-md-4" key={site.id} > 
           <div className="sec1"> 
@@ -617,8 +1072,11 @@ showSecondPane && (
             <a  href={site.webUrl} target="_blank">          
           <FontAwesomeIcon icon={faFolderOpen} />
           <p className="text-dark">Site</p> </a>
-          {/* <i class="fa-regular fa-pen"></i>
-        <p>Analytics</p> */}
+          </div>
+          <div className="sec1-grid" style={{textAlign:'center'}}>
+            <a  onClick={handleAnalyticsClick}>          
+          <FontAwesomeIcon icon={faFolderOpen} />
+          <p className="text-dark">Analytics</p> </a>
           </div>
       {/* <div className="sec1-grid">
       <img src={require('./Images/edit.png')} alt="" />

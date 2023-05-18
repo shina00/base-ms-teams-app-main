@@ -25,6 +25,8 @@ export default function Tab() {
   const { themeString } = useContext(TeamsFxContext);
   const [isConfigured, setIsConfigured] = useState();
   const [needConsent, setNeedConsent] = useState();
+  const [loggedInUser, setLoggedInUser] = useState({});
+
 
   // stop native loading indicator defined in manifest when app loads
   useData(async () => {
@@ -50,8 +52,9 @@ export default function Tab() {
   useData(async () => {
     try {
       let teamsfx = new TeamsFx();
-      await teamsfx.getUserInfo();
+      let userInfo = await teamsfx.getUserInfo();
       setIsConfigured(true);
+      setLoggedInUser(userInfo);
     } catch (err) {
       if (err.message?.includes("resourceDisabled")) {
         setIsConfigured(false)
@@ -114,7 +117,7 @@ console.log("....................", token) 
     <div className={themeString === "default" ? "" : "dark"}>
       {loading && <Loader />}
       {!isConfigured && !loading && <Configure />}
-      {isConfigured && !loading && <div>{needConsent ? <Consent triggerConsent={triggerConsent} /> : <Welcome triggerConsent={triggerConsent} apiClient={apiClient} />}</div>}
+      {isConfigured && !loading && <div>{needConsent ? <Consent triggerConsent={triggerConsent} /> : <Welcome triggerConsent={triggerConsent} apiClient={apiClient} loggedInUser={loggedInUser} />}</div>}
       <Toaster toastOptions={{ duration: 5000 }} />
     </div>
   );

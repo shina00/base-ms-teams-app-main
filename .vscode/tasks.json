@@ -29,30 +29,26 @@
             "dependsOrder": "sequence"
         },
         {
-            // Check if all required prerequisites are installed and will install them if not.
-            // See https://aka.ms/teamsfx-check-prerequisites-task to know the details and how to customize the args.
             "label": "Validate & install prerequisites",
             "type": "teamsfx",
             "command": "debug-check-prerequisites",
             "args": {
                 "prerequisites": [
-                    "nodejs", // Validate if Node.js is installed.
-                    "m365Account", // Sign-in prompt for Microsoft 365 account, then validate if the account enables the sideloading permission.
-                    "devCert", // Install localhost SSL certificate. It's used to serve the development sites over HTTPS to debug the Tab app in Teams.
-                    "func", // Install Azure Functions Core Tools. It's used to serve Azure Functions hosted project locally.
-                    "dotnet", // Ensure .NET Core SDK is installed. TeamsFx Azure Functions project depends on extra .NET binding extensions for HTTP trigger authorization.
-                    "portOccupancy" // Validate available ports to ensure those debug ones are not occupied.
+                    "nodejs",
+                    "m365Account",
+                    "devCert",
+                    "func",
+                    "dotnet",
+                    "portOccupancy"
                 ],
                 "portOccupancy": [
-                    53000, // tab service port
-                    7071, // backend service port
-                    9229 // backend inspector port for Node.js debugger
+                    53000,
+                    7071,
+                    9229
                 ]
             }
         },
         {
-            // Check if all the npm packages are installed and will install them if not.
-            // See https://aka.ms/teamsfx-npm-package-task to know the details and how to customize the args.
             "label": "Install npm packages",
             "type": "teamsfx",
             "command": "debug-npm-install",
@@ -74,8 +70,6 @@
             }
         },
         {
-            // Prepare local launch information for Tab.
-            // See https://aka.ms/teamsfx-debug-set-up-tab-task to know the details and how to customize the args.
             "label": "Set up tab",
             "type": "teamsfx",
             "command": "debug-set-up-tab",
@@ -84,29 +78,16 @@
             }
         },
         {
-            // Register resources and prepare local launch information for SSO functionality.
-            // See https://aka.ms/teamsfx-debug-set-up-sso-task to know the details and how to customize the args.
             "label": "Set up SSO",
             "type": "teamsfx",
             "command": "debug-set-up-sso",
-            "args": {
-                //// Enter your own AAD app information if using the existing AAD app. ////
-                // "objectId": "",
-                // "clientId": "",
-                // "clientSecret": "", // use plain text or environment variable reference like ${env:CLIENT_SECRET}
-                // "accessAsUserScopeId": "
-            }
+            "args": {}
         },
         {
-            // Build and upload Teams manifest.
-            // See https://aka.ms/teamsfx-debug-prepare-manifest-task to know the details and how to customize the args.
             "label": "Build & upload Teams manifest",
             "type": "teamsfx",
             "command": "debug-prepare-manifest",
-            "args": {
-                //// Enter your own Teams app package path if using the existing Teams manifest. ////
-                // "appPackagePath": ""
-            }
+            "args": {}
         },
         {
             "label": "Start services",
@@ -169,7 +150,6 @@
             ]
         },
         {
-            // TeamsFx Azure Functions project depends on extra Azure Functions binding extensions for HTTP trigger authorization.
             "label": "Install Azure Functions binding extensions",
             "type": "shell",
             "command": "dotnet build extensions.csproj -o ./bin --ignore-failed-sources",
@@ -190,6 +170,15 @@
             "presentation": {
                 "reveal": "never"
             }
+        },
+        {
+            "type": "npm",
+            "script": "build:teamsfx",
+            "path": "tabs",
+            "group": "build",
+            "problemMatcher": [],
+            "label": "npm: build:teamsfx - tabs",
+            "detail": "cross-env-shell \"env-cmd -f .env.teamsfx.${TEAMS_FX_ENV} npm run build\""
         }
     ]
 }

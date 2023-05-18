@@ -7,7 +7,7 @@ import appLogo from './Images/logo_2_30_x_30.png';
 import { toasterErrorMessage } from '../utils/errorHandlingUtils';
 
 const teamsfx = new TeamsFx();
-const scope = ["User.Read", "User.ReadBasic.All", "User.Read.All","Directory.Read.All","Sites.Read.All","TeamSettings.Read.All", "Team.ReadBasic.All","Directory.ReadWrite.All","Group.ReadWrite.All","Team.Create","Sites.FullControl.All"];
+const scope = ["User.Read", "User.ReadBasic.All", "User.Read.All","Directory.Read.All","Sites.Read.All","TeamSettings.Read.All", "Team.ReadBasic.All","Directory.ReadWrite.All","Group.ReadWrite.All","Team.Create","Sites.FullControl.All","Reports.Read.All","AllSites.FullControl","Sites.Read.All"];
 
 export default function Consent(props) {
     const { triggerConsent } = props;
